@@ -15,17 +15,26 @@ boot and provision correctly on Azure.
 
 ---
 
-## Why a Linux (KVM) builder in Azure?
+## Two build paths
 
-- OL 8.7 is **x86_64**. Building on Apple Silicon / Windows-ARM means slow
-  emulation and subtle boot issues.
-- An Azure **Dv3/Dsv3/Fsv2** VM exposes **nested virtualization** (VT-x), so KVM
-  runs the guest at native speed.
-- Linux tooling (`virt-install` + kickstart, `qemu-img`, `virt-customize`,
-  `virt-sysprep`, `azcopy`) makes the whole flow scriptable and repeatable.
+Both produce the same Azure-ready image. Pick the one that matches your host.
 
-You can also build with **Windows + Hyper-V** — the guest preparation is
-identical; only the host “shell” differs. See `docs/PROCESS.md`.
+| Path | Host | Automation | Guide |
+|------|------|-----------|-------|
+| **A. KVM builder in Azure** | Azure Linux VM (nested virt) | Fully scripted (kickstart + virt-customize) | this README + `docs/PROCESS.md` |
+| **B. Hyper-V on Windows** | Local Windows Pro/Enterprise | Manual install + in-guest prep | **`docs/HYPERV-WINDOWS.md`** |
+
+- **Path A** (this README): OL 8.7 is x86_64; an Azure Dv3/Dsv3/Fsv2 VM exposes
+  nested virtualization so KVM runs the guest at native speed. Linux tooling
+  (`virt-install`, `qemu-img`, `virt-customize`, `virt-sysprep`, `azcopy`) makes
+  it fully repeatable.
+- **Path B** (`docs/HYPERV-WINDOWS.md`): build by hand on a local Windows machine
+  with Hyper-V. No `virt-customize`, so Azure prep runs **inside the guest**
+  (`scripts/hyperv/`), and the disk is converted with `Convert-VHD` + `Add-AzVhd`.
+  Because edits happen in a running system, **SELinux can stay `enforcing`**.
+
+The five root-cause fixes below apply to **both** paths — only *how* they’re
+applied differs (offline `virt-customize` vs. in-guest shell).
 
 ---
 
@@ -142,5 +151,6 @@ sudo bash scripts/harden-selinux-enforcing.sh   # relabels, sets enforcing, rebo
 - An Azure subscription/region with **nested-virt capacity** (step 1 probes
   several sizes; if a region is capacity-constrained, try another).
 
-See `docs/PROCESS.md` for the narrative walkthrough and `docs/TROUBLESHOOTING.md`
-for symptom → cause → fix.
+See `docs/PROCESS.md` for the narrative walkthrough, `docs/HYPERV-WINDOWS.md`
+for the Windows/Hyper-V path, and `docs/TROUBLESHOOTING.md` for
+symptom → cause → fix.
