@@ -1,0 +1,17 @@
+# Build artifacts
+*.iso
+*.qcow2
+*.raw
+*.vhd
+*.fd
+
+# Secrets / local
+sas*.txt
+builder_ip.txt
+*.pem
+*.key
+.env
+
+# OS
+.DS_Store
+Thumbs.db
