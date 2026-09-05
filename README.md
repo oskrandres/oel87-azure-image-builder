@@ -54,6 +54,47 @@ Kickstart: `kickstart/ol87-azure.ks` (standard partitions, no LVM, no swap).
 
 ---
 
+## Flow diagram
+
+```mermaid
+flowchart TD
+    subgraph A["Path A - KVM builder in Azure (scripted)"]
+        A1[01 Create nested-virt builder VM] --> A2[02 Install KVM + tools + download ISO]
+        A2 --> A3[03 Kickstart install OL 8.7<br/>standard partitions, no LVM/swap]
+        A3 --> A4[04 Offline Azure prep<br/>virt-customize: 5 fixes + prereqs<br/>virt-sysprep generalize<br/>SELinux permissive]
+        A4 --> A5[05 qcow2 to fixed VHD<br/>upload to managed disk]
+    end
+
+    subgraph B["Path B - Hyper-V on Windows (manual)"]
+        B1[01 Create Gen2 VM<br/>Secure Boot OFF] --> B2[Install OL 8.7 in Anaconda<br/>standard partitions, no LVM/swap]
+        B2 --> B3[02 In-guest Azure prep<br/>5 fixes + prereqs<br/>SELinux stays enforcing]
+        B3 --> B4[03 Generalize<br/>waagent -deprovision]
+        B4 --> B5[04 Convert-VHD fixed<br/>Add-AzVhd upload]
+    end
+
+    A5 --> G[Publish Azure Compute Gallery<br/>image definition + version]
+    B5 --> G
+    G --> D[06 Deploy VM from image]
+    D --> V{Provisioning succeeded?<br/>eth0 DHCP, waagent Ready}
+    V -->|yes| OK[Base image ready<br/>OS + WebLogic/FLEXCUBE prereqs]
+    V -->|no| T[docs/TROUBLESHOOTING.md<br/>serial console -> root cause]
+    T --> A4
+    OK --> W[Optional: install WebLogic / FLEXCUBE<br/>thin base + automation, or thick golden image]
+```
+
+### The 5 fixes (applied at the highlighted prep step)
+
+```mermaid
+flowchart LR
+    F1[1 initramfs<br/>hv drivers, no-hostonly] --> P[Azure-ready image]
+    F2[2 standard partitions<br/>no LVM/swap] --> P
+    F3[3 SELinux<br/>relabel / permissive] --> P
+    F4[4 cloud-init masked<br/>waagent provisioning] --> P
+    F5[5 ifcfg-eth0 DHCP<br/>net.ifnames=0] --> P
+```
+
+---
+
 ## Quick start
 
 ```bash
@@ -130,6 +171,35 @@ Every one of these produced the same opaque symptom —
 Plus: `udf`/`vfat` modules (Azure passes provisioning config on a UDF dvd),
 swap on the **temporary resource disk** (never the OS disk), and the
 WebLogic/FLEXCUBE prerequisites.
+
+---
+
+## What the image contains (and what it does NOT)
+
+This is a **thin / base image**: a hardened OS with the OS-level prerequisites,
+**not** the middleware itself.
+
+**Included:**
+- Oracle Linux 8.7 (x86_64), Azure-ready (the 5 fixes above).
+- WebLogic/FLEXCUBE **OS prerequisite packages**: `binutils gcc gcc-c++ glibc
+  glibc-devel glibc-langpack-en libaio libaio-devel libnsl libnsl2 libstdc++
+  libstdc++-devel make sysstat unzip tar which ksh xorg-x11-xauth` and
+  **`java-1.8.0-openjdk-devel` (JDK 8)**.
+- **`oracle`** user (uid 54321) + `oinstall`/`dba` groups.
+- `/u01/app/oracle` and `/u01/app/oraInventory`.
+- Kernel/resource tuning: `oracle` limits in `limits.conf`, `97-oracle.conf` sysctl.
+
+**NOT included (install on top):**
+- ❌ **Oracle WebLogic Server** binaries.
+- ❌ **Oracle FLEXCUBE**.
+- ❌ Oracle Database client/server.
+
+**Why thin?** WebLogic needs an Oracle license and isn’t redistributable in a
+shared image; middleware patches shouldn’t force an image rebuild; and FLEXCUBE
+needs per-environment configuration. For banking, a thin base + automated
+middleware install is the common pattern. To bake WebLogic in (a “thick / golden”
+image), install it after step 4/2 and before generalizing (see `docs/PROCESS.md`,
+section 7).
 
 ---
 
